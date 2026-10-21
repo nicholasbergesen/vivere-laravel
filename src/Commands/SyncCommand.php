@@ -161,7 +161,7 @@ class SyncCommand extends Command
             $this->warn("{$stale} monitor(s) still expect the old schedule and will alert at the wrong times. Run vivere:sync --force to replace them.");
         }
         if ($failed) {
-            $this->error("{$failed} monitor(s) could not be created; see the table above.");
+            $this->error("{$failed} change(s) failed; see the table above.");
 
             return self::FAILURE;
         }
