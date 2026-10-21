@@ -52,7 +52,7 @@ With several servers, run `vivere:sync` on one of them and give the others the s
 
 Tasks with `runInBackground()` report when they actually finish, with their real exit code. A run that `withoutOverlapping()` skips because the previous run still holds the lock sends nothing, so a hung task shows up as a missed run. `schedule:test` sends nothing.
 
-Pings time out after 5 seconds, with one retry only if Vivere couldn't be reached, and never throw: if Vivere is down, your task still runs and the failure is logged.
+Pings time out after 5 seconds, with one retry only if Vivere couldn't be reached or answered with a server error, and never throw: if Vivere is down, your task still runs and the failure is logged.
 
 If a task writes its output to a file (`sendOutputTo()` or `appendOutputTo()`), the last 8 KB goes with its closing ping and Vivere keeps it as the run's log. Set `send_output` to `false` in the config if task output can contain secrets.
 
@@ -82,7 +82,7 @@ php artisan vendor:publish --tag=vivere-config
 
 ## Commands
 
-- `vivere:sync`: create monitors for new tasks. `--dry-run` shows what would change. `--force` replaces monitors whose schedule changed (their run history starts again). `--prune` deletes monitors for tasks you removed.
+- `vivere:sync`: create monitors for new tasks. `--dry-run` shows what would change. `--force` replaces monitors whose schedule changed: it creates the new monitor before deleting the old one, so it needs one free monitor on your plan, and the run history starts again. `--prune` deletes monitors for tasks you removed.
 - `vivere:list`: each task, its monitor, and the monitor's current state.
 
 Monitors are named `<app>: <task>` and tagged `laravel-app:<app>`. The app is `APP_NAME` plus `APP_ENV` (for example `shop-production` and `shop-staging`) unless you set `VIVERE_APP`, so several apps and environments can share one Vivere account; `--prune` only touches monitors for the current app.

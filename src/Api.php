@@ -2,6 +2,7 @@
 
 namespace Vivere\Laravel;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -11,20 +12,24 @@ use RuntimeException;
  */
 class Api
 {
-    private function client(): PendingRequest
+    /**
+     * Reads and deletes retry on connection errors. Creates never retry: a request that
+     * timed out may still have created the monitor, and a retry would make a second one.
+     */
+    private function client(bool $retry = true): PendingRequest
     {
         $key = config('vivere.api_key');
         if (! $key) {
             throw new RuntimeException('Set VIVERE_API_KEY (an API key from https://vivere.dev/app/keys) to sync monitors.');
         }
 
-        return Http::baseUrl(rtrim((string) config('vivere.base_url', 'https://vivere.dev'), '/') . '/api/v1')
+        $client = Http::baseUrl(rtrim((string) config('vivere.base_url', 'https://vivere.dev'), '/') . '/api/v1')
             ->withToken($key)
             ->withUserAgent('vivere-laravel')
             ->acceptJson()
-            ->timeout(20)
-            ->retry(2, 1000, fn ($e, $request) => $e instanceof \Illuminate\Http\Client\ConnectionException
-                && $request->method() !== 'POST', throw: false);
+            ->timeout(20);
+
+        return $retry ? $client->retry(2, 1000, fn ($e) => $e instanceof ConnectionException, throw: false) : $client;
     }
 
     /** @return array<int, array> */
@@ -39,7 +44,7 @@ class Api
 
     public function create(array $monitor): array
     {
-        $r = $this->client()->post('/monitors', $monitor);
+        $r = $this->client(retry: false)->post('/monitors', $monitor);
         $this->check($r, "create the monitor \"{$monitor['name']}\"");
 
         return $r->json('monitor') ?? $r->json();

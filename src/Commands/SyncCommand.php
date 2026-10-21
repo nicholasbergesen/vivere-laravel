@@ -112,17 +112,29 @@ class SyncCommand extends Command
             }
             try {
                 $created = $api->create($body);
-            } catch (RuntimeException $e) {
+            } catch (RuntimeException|ConnectionException $e) {
                 // One task Vivere won't take (a plan limit, an odd cron) shouldn't stop the rest.
+                // A replacement is created before the old monitor is deleted, so it needs a free slot.
                 $failed++;
-                $rows[] = [$key, $want['name'], $want['cron'], 'failed: ' . $e->getMessage()];
+                if ($have) {
+                    $entries[$key] = ['id' => $have['id'], 'name' => $have['name'], 'cron' => $have['cron'] ?? '', 'timezone' => $have['timezone'] ?? ''];
+                }
+                $rows[] = [$key, $want['name'], $want['cron'], 'failed: ' . $e->getMessage()
+                    . ($have ? ' (the old monitor is kept; replacing needs one free monitor on your plan)' : '')];
                 continue;
             }
-            if ($have) {
-                $api->delete($have['id']);
-            }
             $entries[$key] = ['id' => $created['id']] + $want;
-            $rows[] = [$key, $want['name'], $want['cron'], $have ? 'replaced' : 'created'];
+            $result = $have ? 'replaced' : 'created';
+            if ($have) {
+                try {
+                    $api->delete($have['id']);
+                } catch (RuntimeException|ConnectionException $e) {
+                    // The new monitor is in the map either way; the old one is only left over.
+                    $failed++;
+                    $result = "replaced, but the old monitor {$have['id']} could not be deleted: " . $e->getMessage();
+                }
+            }
+            $rows[] = [$key, $want['name'], $want['cron'], $result];
         }
 
         foreach ($existing as $key => $m) {

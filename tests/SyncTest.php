@@ -13,6 +13,8 @@ class SyncTest extends TestCase
 
     private int $next = 1;
 
+    private ?string $refuseDelete = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -30,6 +32,9 @@ class SyncTest extends TestCase
                 $this->remote[$m['id']] = $m;
 
                 return Http::response($m, 201);
+            }
+            if ($r->method() === 'DELETE' && $this->refuseDelete && str_ends_with($path, '/' . $this->refuseDelete)) {
+                return Http::response(['error' => 'internal error'], 500);
             }
             if ($r->method() === 'DELETE' && preg_match('#^/api/v1/monitors/(.+)$#', $path, $x)) {
                 unset($this->remote[$x[1]]);
@@ -199,6 +204,26 @@ class SyncTest extends TestCase
         $this->schedule()->command('backup:run')->daily();
 
         $this->artisan('vivere:sync')->expectsOutputToContain('Set VIVERE_APP');
+    }
+
+    public function test_vivere_unreachable_prints_the_error_instead_of_crashing(): void
+    {
+        Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('Connection timed out'));
+        $this->schedule()->command('backup:run')->daily();
+
+        $this->artisan('vivere:sync')->expectsOutputToContain('Connection timed out')->assertExitCode(1);
+    }
+
+    public function test_a_failed_delete_after_a_replacement_still_saves_the_new_monitor(): void
+    {
+        $event = $this->schedule()->command('backup:run')->dailyAt('02:00');
+        $this->remote['undeletable'] = ['id' => 'undeletable', 'name' => 'shop-production: backup:run', 'cron' => '0 1 * * *',
+            'timezone' => 'Europe/London', 'tags' => 'laravel, laravel-app:shop-production, laravel-key:' . (new Task($event))->key()];
+        $this->refuseDelete = 'undeletable';
+
+        $this->artisan('vivere:sync --force')->expectsOutputToContain('could not be deleted')->assertExitCode(1);
+
+        $this->assertSame('mon-1', array_values($this->map())[0]['id']);
     }
 
     public function test_the_key_ignores_the_php_binary_and_artisan_path(): void

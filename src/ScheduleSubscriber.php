@@ -47,7 +47,7 @@ class ScheduleSubscriber
         // Finished with exit code 0 for a run it skipped. Reporting that as a success would
         // hide the case a heartbeat is for: a hung run holding the lock. Send nothing and
         // let the next due time pass.
-        if ($e->task->withoutOverlapping && $e->task->mutex->exists($e->task)) {
+        if ($e->task->withoutOverlapping && $this->locked($e->task)) {
             $this->closed[$e->task] = true;
 
             return;
@@ -94,6 +94,15 @@ class ScheduleSubscriber
         }
         // Vivere treats /<code> as the run's exit code: 0 is success, anything else a failure.
         $this->pinger->ping($monitor, (string) max(1, min(255, $exitCode)), $this->outputTail($task) ?: null);
+    }
+
+    private function locked(Event $task): bool
+    {
+        try {
+            return $task->mutex->exists($task);
+        } catch (\Throwable) {
+            return false; // the cache is down; the scheduler will report that itself
+        }
     }
 
     private function monitorFor(Event $task): ?string

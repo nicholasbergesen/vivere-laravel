@@ -31,7 +31,7 @@ class Task
         $command = preg_replace('/^.*?[\'"]?artisan[\'"]?\s+/', '', $event->command, 1);
         // Paths inside the app, so a deploy into a new release directory keeps the same key.
         $base = rtrim(base_path(), '\\/');
-        $command = str_replace([$base . DIRECTORY_SEPARATOR, $base . '/', $base], '', $command);
+        $command = str_replace([$base . DIRECTORY_SEPARATOR, $base . '/'], '', $command);
 
         return trim($command);
     }
