@@ -1,0 +1,39 @@
+{
+    "name": "vivere/laravel",
+    "description": "Monitor every Laravel scheduled task with Vivere: get alerted when a task fails, exits non-zero, or doesn't run at all.",
+    "keywords": ["laravel", "scheduler", "cron", "monitoring", "heartbeat", "dead man's switch", "vivere"],
+    "homepage": "https://vivere.dev/docs/laravel",
+    "license": "MIT",
+    "authors": [
+        {"name": "Vivere", "email": "hello@vivere.dev", "homepage": "https://vivere.dev"}
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/console": "^12.0|^13.0",
+        "illuminate/http": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0|^11.0",
+        "phpunit/phpunit": "^11.0|^12.0"
+    },
+    "autoload": {
+        "psr-4": {"Vivere\\Laravel\\": "src/"}
+    },
+    "autoload-dev": {
+        "psr-4": {"Vivere\\Laravel\\Tests\\": "tests/"}
+    },
+    "extra": {
+        "laravel": {
+            "providers": ["Vivere\\Laravel\\VivereServiceProvider"]
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
