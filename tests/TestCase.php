@@ -20,6 +20,7 @@ abstract class TestCase extends Base
     {
         $this->mapPath = sys_get_temp_dir() . '/vivere-test-' . uniqid() . '.json';
         $app['config']->set('app.name', 'Shop');
+        $app['config']->set('app.env', 'production');
         $app['config']->set('app.timezone', 'Europe/London');
         $app['config']->set('vivere.api_key', 'test-key');
         $app['config']->set('vivere.map_path', $this->mapPath);

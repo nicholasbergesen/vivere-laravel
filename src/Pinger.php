@@ -2,13 +2,16 @@
 
 namespace Vivere\Laravel;
 
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * Sends pings to Vivere. A ping can never break or slow down the scheduler much:
- * short timeout, one retry, and every failure is logged and swallowed.
+ * a 5 second timeout, one retry only when Vivere couldn't be reached or answered 5xx,
+ * and every failure is logged and swallowed.
  */
 class Pinger
 {
@@ -21,16 +24,28 @@ class Pinger
             . ($signal === '' ? '' : '/' . $signal);
         try {
             $request = Http::timeout((int) config('vivere.timeout', 5))
-                ->retry(2, 500, throw: false)
+                ->connectTimeout(3)
+                ->retry(2, 300, fn ($e) => $e instanceof ConnectionException
+                    || ($e instanceof RequestException && $e->response->serverError()), throw: false)
                 ->withUserAgent('vivere-laravel');
             // Always a plain-text body: an empty POST from Laravel's client is "[]" as JSON,
             // which Vivere would keep as the run's log.
             $response = $request->withBody($body === null ? '' : mb_strcut($body, -64000), 'text/plain')->post($url);
             if ($response->failed()) {
-                Log::warning("Vivere ping to {$url} returned HTTP {$response->status()}");
+                $this->warn("returned HTTP {$response->status()}", $monitor, $signal);
             }
         } catch (Throwable $e) {
-            Log::warning("Vivere ping to {$url} failed: {$e->getMessage()}");
+            $this->warn('failed: ' . $e->getMessage(), $monitor, $signal);
+        }
+    }
+
+    /** Logs a failed ping without the full ping URL, which anyone could use to ping. */
+    private function warn(string $what, string $monitor, string $signal): void
+    {
+        try {
+            $shown = substr($monitor, 0, 8) . '...' . ($signal === '' ? '' : '/' . $signal);
+            Log::warning("Vivere ping {$shown} {$what}");
+        } catch (Throwable) {
         }
     }
 }

@@ -37,7 +37,9 @@ class MonitorMap
             mkdir($dir, 0775, true);
         }
         ksort($entries);
-        file_put_contents($this->path, json_encode(['monitors' => $entries], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        $tmp = $this->path . '.' . getmypid() . '.tmp';
+        file_put_contents($tmp, json_encode(['monitors' => $entries], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        rename($tmp, $this->path);
         $this->entries = $entries;
     }
 

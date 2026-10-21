@@ -22,12 +22,16 @@ class Task
     public function identity(): ?string
     {
         $event = $this->event;
-        if ($event instanceof CallbackEvent || $event->command === null) {
-            $description = trim((string) $event->description);
-
+        $description = trim((string) $event->description);
+        // A name set with ->name() or ->description() wins, so the same command scheduled
+        // twice can be told apart.
+        if ($description !== '' || $event instanceof CallbackEvent || $event->command === null) {
             return $description === '' ? null : $description;
         }
         $command = preg_replace('/^.*?[\'"]?artisan[\'"]?\s+/', '', $event->command, 1);
+        // Paths inside the app, so a deploy into a new release directory keeps the same key.
+        $base = rtrim(base_path(), '\\/');
+        $command = str_replace([$base . DIRECTORY_SEPARATOR, $base . '/', $base], '', $command);
 
         return trim($command);
     }
@@ -77,8 +81,14 @@ class Task
         return app(TaskOptions::class)->get($this->event)['monitor'];
     }
 
+    /**
+     * The app's name in monitor names and tags. Without VIVERE_APP it is APP_NAME plus
+     * APP_ENV, so production and staging in one Vivere account get separate monitors.
+     */
     public static function app(): string
     {
-        return Str::slug((string) (config('vivere.app') ?: config('app.name', 'laravel'))) ?: 'laravel';
+        $name = config('vivere.app') ?: config('app.name', 'laravel') . ' ' . config('app.env', 'production');
+
+        return Str::slug((string) $name) ?: 'laravel';
     }
 }

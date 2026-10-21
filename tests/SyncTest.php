@@ -55,13 +55,13 @@ class SyncTest extends TestCase
 
         $created = array_values($this->remote);
         $this->assertCount(2, $created);
-        $this->assertSame('shop: backup:run', $created[0]['name']);
+        $this->assertSame('shop-production: backup:run', $created[0]['name']);
         $this->assertSame('0 2 * * *', $created[0]['cron']);
         $this->assertSame('Europe/London', $created[0]['timezone']);
         $this->assertSame('5m', $created[0]['grace']);
         $this->assertSame('heartbeat', $created[0]['kind']);
-        $this->assertStringContainsString('laravel-app:shop', $created[0]['tags']);
-        $this->assertSame('shop: Send digest', $created[1]['name']);
+        $this->assertStringContainsString('laravel-app:shop-production,', $created[0]['tags']);
+        $this->assertSame('shop-production: Send digest', $created[1]['name']);
         $this->assertSame('0 8 * * 1', $created[1]['cron']);
         $this->assertSame('America/New_York', $created[1]['timezone']);
         $this->assertSame('30m', $created[1]['grace']);
@@ -96,10 +96,13 @@ class SyncTest extends TestCase
 
     public function test_prune_deletes_monitors_for_removed_tasks(): void
     {
-        $this->remote['old'] = ['id' => 'old', 'name' => 'shop: old:task', 'cron' => '* * * * *',
-            'tags' => 'laravel, laravel-app:shop, laravel-key:aaaaaaaaaaaa'];
+        $this->remote['old'] = ['id' => 'old', 'name' => 'shop-production: old:task', 'cron' => '* * * * *',
+            'tags' => 'laravel, laravel-app:shop-production, laravel-key:aaaaaaaaaaaa'];
         $this->remote['other-app'] = ['id' => 'other-app', 'name' => 'blog: x', 'cron' => '* * * * *',
-            'tags' => 'laravel, laravel-app:blog, laravel-key:bbbbbbbbbbbb'];
+            'tags' => 'laravel, laravel-app:blog-production, laravel-key:bbbbbbbbbbbb'];
+        // Its app name starts with this app's: it must not be mistaken for this app's.
+        $this->remote['prefix-app'] = ['id' => 'prefix-app', 'name' => 'shop-production-eu: x', 'cron' => '* * * * *',
+            'tags' => 'laravel, laravel-app:shop-production-eu, laravel-key:cccccccccccc'];
 
         $this->artisan('vivere:sync')->expectsOutputToContain('--prune deletes it');
         $this->assertArrayHasKey('old', $this->remote);
@@ -107,6 +110,7 @@ class SyncTest extends TestCase
         $this->artisan('vivere:sync --prune');
         $this->assertArrayNotHasKey('old', $this->remote);
         $this->assertArrayHasKey('other-app', $this->remote, "another app's monitors are never touched");
+        $this->assertArrayHasKey('prefix-app', $this->remote, 'an app whose name starts with this one is another app');
     }
 
     public function test_dry_run_changes_nothing(): void
@@ -138,6 +142,63 @@ class SyncTest extends TestCase
 
         $this->assertCount(1, $this->remote);
         $this->assertCount(1, $this->map(), 'the map still gets the monitors that were created');
+    }
+
+    public function test_force_keeps_the_old_monitor_when_the_new_one_is_refused(): void
+    {
+        $event = $this->schedule()->command('backup:run')->dailyAt('02:00')->name('nightly refused');
+        $this->remote['mon-0'] = ['id' => 'mon-0', 'name' => 'shop-production: nightly refused', 'cron' => '0 1 * * *',
+            'timezone' => 'Europe/London', 'tags' => 'laravel, laravel-app:shop-production, laravel-key:' . (new Task($event))->key()];
+
+        $this->artisan('vivere:sync --force')->assertExitCode(1);
+
+        $this->assertArrayHasKey('mon-0', $this->remote, 'the old monitor is only deleted once its replacement exists');
+    }
+
+    public function test_a_changed_schedule_warns_that_alerts_will_be_wrong(): void
+    {
+        $event = $this->schedule()->command('backup:run')->dailyAt('02:00');
+        $this->artisan('vivere:sync');
+        $event->dailyAt('03:00');
+
+        $this->artisan('vivere:sync')->expectsOutputToContain('will alert at the wrong times');
+    }
+
+    public function test_the_same_command_twice_gets_two_monitors_when_named(): void
+    {
+        $this->schedule()->command('report:send')->daily()->name('daily report');
+        $this->schedule()->command('report:send')->weekly()->name('weekly report');
+
+        $this->artisan('vivere:sync')->assertExitCode(0);
+
+        $this->assertCount(2, $this->remote);
+    }
+
+    public function test_exec_paths_inside_the_app_dont_change_the_key(): void
+    {
+        $a = $this->schedule()->exec(base_path('bin/export.sh') . ' --all')->daily();
+
+        $this->assertSame('bin/export.sh --all', (new Task($a))->identity());
+    }
+
+    public function test_production_and_staging_get_separate_monitors(): void
+    {
+        $event = $this->schedule()->command('backup:run')->daily();
+        $prod = (new Task($event))->key();
+        config(['app.env' => 'staging']);
+
+        $this->assertNotSame($prod, (new Task($event))->key());
+        $this->assertSame('shop-staging', Task::app());
+        config(['vivere.app' => 'Shop']);
+        $this->assertSame('shop', Task::app(), 'VIVERE_APP replaces the name and the environment');
+    }
+
+    public function test_the_default_laravel_name_gets_a_warning(): void
+    {
+        config(['app.name' => 'Laravel']);
+        $this->schedule()->command('backup:run')->daily();
+
+        $this->artisan('vivere:sync')->expectsOutputToContain('Set VIVERE_APP');
     }
 
     public function test_the_key_ignores_the_php_binary_and_artisan_path(): void

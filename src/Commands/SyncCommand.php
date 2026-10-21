@@ -36,16 +36,29 @@ class SyncCommand extends Command
         }
     }
 
+    /** @return string[] tags from a comma-separated string or a list */
+    private static function tags(mixed $tags): array
+    {
+        $list = is_array($tags) ? $tags : preg_split('/\s*,\s*/', trim((string) $tags));
+
+        return array_values(array_filter(array_map(fn ($t) => strtolower(trim((string) $t)), $list)));
+    }
+
     private function sync(Schedule $schedule, Api $api, MonitorMap $map, TaskOptions $options): int
     {
         $dry = (bool) $this->option('dry-run');
         $app = Task::app();
         $appTag = 'laravel-app:' . $app;
+        if (! config('vivere.app') && strtolower((string) config('app.name')) === 'laravel') {
+            $this->warn("APP_NAME is still \"Laravel\". Set VIVERE_APP so this app's monitors can't be mixed up with another app's.");
+        }
 
         $existing = [];
         foreach ($api->monitors() as $m) {
-            if (preg_match('/laravel-key:([0-9a-f]{12})/', (string) ($m['tags'] ?? ''), $k) && str_contains((string) $m['tags'], $appTag)) {
-                $existing[$k[1]] = $m;
+            $tags = self::tags($m['tags'] ?? '');
+            $keys = preg_grep('/^laravel-key:[0-9a-f]{12}$/', $tags);
+            if ($keys && in_array($appTag, $tags, true)) {
+                $existing[substr(reset($keys), strlen('laravel-key:'))] = $m;
             }
         }
 
@@ -53,6 +66,7 @@ class SyncCommand extends Command
         $rows = [];
         $changed = 0;
         $failed = 0;
+        $stale = 0;
         foreach ($schedule->events() as $event) {
             $task = new Task($event);
             if (! $options->monitored($event) || $task->fixedMonitor()) {
@@ -78,16 +92,14 @@ class SyncCommand extends Command
             }
             if ($have && ! $this->option('force')) {
                 $entries[$key] = ['id' => $have['id'], 'name' => $have['name'], 'cron' => $have['cron'] ?? '', 'timezone' => $have['timezone'] ?? ''];
-                $rows[] = [$key, $want['name'], $want['cron'], "schedule changed from {$have['cron']}; run with --force to replace"];
+                $rows[] = [$key, $want['name'], $want['cron'], "schedule changed from {$have['cron']} {$have['timezone']}; run with --force to replace"];
+                $stale++;
                 continue;
             }
             $changed++;
             if ($dry) {
                 $rows[] = [$key, $want['name'], $want['cron'], $have ? 'would replace' : 'would create'];
                 continue;
-            }
-            if ($have) {
-                $api->delete($have['id']);
             }
             $body = $want + [
                 'kind' => 'heartbeat',
@@ -105,6 +117,9 @@ class SyncCommand extends Command
                 $failed++;
                 $rows[] = [$key, $want['name'], $want['cron'], 'failed: ' . $e->getMessage()];
                 continue;
+            }
+            if ($have) {
+                $api->delete($have['id']);
             }
             $entries[$key] = ['id' => $created['id']] + $want;
             $rows[] = [$key, $want['name'], $want['cron'], $have ? 'replaced' : 'created'];
@@ -130,6 +145,9 @@ class SyncCommand extends Command
         }
         $map->save($entries);
         $this->info(count($entries) . " task(s) monitored. Map written to {$map->path()}.");
+        if ($stale) {
+            $this->warn("{$stale} monitor(s) still expect the old schedule and will alert at the wrong times. Run vivere:sync --force to replace them.");
+        }
         if ($failed) {
             $this->error("{$failed} monitor(s) could not be created; see the table above.");
 

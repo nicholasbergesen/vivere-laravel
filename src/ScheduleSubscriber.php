@@ -19,7 +19,7 @@ use WeakMap;
  */
 class ScheduleSubscriber
 {
-    /** @var WeakMap<Event, true> runs already closed */
+    /** @var WeakMap<Event, true> runs already closed, or skipped */
     private WeakMap $closed;
 
     public function __construct(
@@ -43,6 +43,15 @@ class ScheduleSubscriber
     public function starting(ScheduledTaskStarting $e): void
     {
         unset($this->closed[$e->task]);
+        // The scheduler dispatches Starting before it checks the overlap lock, and then
+        // Finished with exit code 0 for a run it skipped. Reporting that as a success would
+        // hide the case a heartbeat is for: a hung run holding the lock. Send nothing and
+        // let the next due time pass.
+        if ($e->task->withoutOverlapping && $e->task->mutex->exists($e->task)) {
+            $this->closed[$e->task] = true;
+
+            return;
+        }
         if ($monitor = $this->monitorFor($e->task)) {
             $this->pinger->ping($monitor, 'start');
         }
@@ -51,7 +60,7 @@ class ScheduleSubscriber
     public function finished(ScheduledTaskFinished $e): void
     {
         // A background task reports when schedule:finish runs, with its real exit code.
-        if ($e->task->runInBackground) {
+        if ($e->task->runInBackground || ($e->task->skippedBecauseOverlapping ?? false)) {
             return;
         }
         $this->close($e->task, (int) $e->task->exitCode);

@@ -80,6 +80,31 @@ class PingTest extends TestCase
         $this->assertSame(['POST /p/m-0/start', 'POST /p/m-0/2 synced 42 rows'], $this->pings());
     }
 
+    public function test_a_run_skipped_because_the_last_one_still_holds_the_lock_sends_nothing(): void
+    {
+        // A hung run holding the overlap lock must not look like a success every minute.
+        $event = $this->schedule()->call(fn () => null)->name('import')->everyMinute()->withoutOverlapping();
+        $this->mapAll();
+        $event->mutex->create($event);
+
+        $this->artisan('schedule:run');
+
+        $this->assertSame([], $this->pings());
+        $event->mutex->forget($event);
+    }
+
+    public function test_a_background_task_reports_its_real_exit_code_when_it_finishes(): void
+    {
+        $event = $this->schedule()->command('export:run')->everyMinute()->runInBackground();
+        $this->mapAll();
+
+        // What schedule:finish does in the background process once the command exits.
+        $event->finish($this->app, 4);
+        event(new \Illuminate\Console\Events\ScheduledBackgroundTaskFinished($event));
+
+        $this->assertSame(['POST /p/m-0/4'], $this->pings());
+    }
+
     public function test_without_vivere_sends_nothing(): void
     {
         $this->schedule()->call(fn () => null)->name('quiet')->everyMinute()->withoutVivere();

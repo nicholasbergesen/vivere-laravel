@@ -23,7 +23,8 @@ class Api
             ->withUserAgent('vivere-laravel')
             ->acceptJson()
             ->timeout(20)
-            ->retry(2, 1000, fn ($e) => $e instanceof \Illuminate\Http\Client\ConnectionException, throw: false);
+            ->retry(2, 1000, fn ($e, $request) => $e instanceof \Illuminate\Http\Client\ConnectionException
+                && $request->method() !== 'POST', throw: false);
     }
 
     /** @return array<int, array> */

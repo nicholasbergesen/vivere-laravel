@@ -45,8 +45,10 @@ return [
     'map_path' => storage_path('app/vivere-monitors.json'),
 
     /*
-     | Attach the end of a failed task's output to the fail ping, when the task
-     | writes its output to a file (->sendOutputTo() or ->appendOutputTo()).
+     | Send the end of a task's output (the last 8 KB) with its closing ping, when
+     | the task writes its output to a file (->sendOutputTo() or ->appendOutputTo()).
+     | Vivere keeps it as the run's log, for successes and failures alike, so turn
+     | this off if task output can contain secrets.
      */
     'send_output' => true,
 

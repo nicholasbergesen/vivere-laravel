@@ -38,6 +38,8 @@ That's it. The next time `schedule:run` starts a task, Vivere gets a start ping,
 
 Run `vivere:sync` as part of your deploy, after `composer install`. It is safe to run every time: tasks that already have a monitor are left alone, and new tasks get one. The task-to-monitor map is written to `storage/app/vivere-monitors.json`; the API key is only needed by `vivere:sync` and `vivere:list`, never by the scheduler.
 
+With several servers, run `vivere:sync` on one of them and give the others the same map file (commit it, or copy it in your deploy), so every server pings the same monitors.
+
 ## What gets sent
 
 | The task... | Vivere receives |
@@ -48,7 +50,11 @@ Run `vivere:sync` as part of your deploy, after `composer install`. It is safe t
 | throws | `/fail` with the exception class and message |
 | doesn't run when due | nothing, so Vivere alerts when the grace period runs out |
 
-Tasks with `runInBackground()` report when they actually finish, with their real exit code. Pings time out after 5 seconds and never throw: if Vivere can't be reached, your task still runs and the failure is logged.
+Tasks with `runInBackground()` report when they actually finish, with their real exit code. A run that `withoutOverlapping()` skips because the previous run still holds the lock sends nothing, so a hung task shows up as a missed run. `schedule:test` sends nothing.
+
+Pings time out after 5 seconds, with one retry only if Vivere couldn't be reached, and never throw: if Vivere is down, your task still runs and the failure is logged.
+
+If a task writes its output to a file (`sendOutputTo()` or `appendOutputTo()`), the last 8 KB goes with its closing ping and Vivere keeps it as the run's log. Set `send_output` to `false` in the config if task output can contain secrets.
 
 ## Per-task options
 
@@ -79,7 +85,9 @@ php artisan vendor:publish --tag=vivere-config
 - `vivere:sync`: create monitors for new tasks. `--dry-run` shows what would change. `--force` replaces monitors whose schedule changed (their run history starts again). `--prune` deletes monitors for tasks you removed.
 - `vivere:list`: each task, its monitor, and the monitor's current state.
 
-Monitors are named `<app>: <task>` and tagged `laravel-app:<app>`, so several apps can share one Vivere account; `--prune` only touches monitors for the current app.
+Monitors are named `<app>: <task>` and tagged `laravel-app:<app>`. The app is `APP_NAME` plus `APP_ENV` (for example `shop-production` and `shop-staging`) unless you set `VIVERE_APP`, so several apps and environments can share one Vivere account; `--prune` only touches monitors for the current app.
+
+A task is identified by its command (paths inside the app are made relative, so release directories don't matter) or by its name. To schedule the same command twice, give each a `->name()`. A command whose arguments change every day, such as a date, needs a `->name()` too, or each day looks like a new task.
 
 ## Configuration
 
@@ -89,7 +97,7 @@ Monitors are named `<app>: <task>` and tagged `laravel-app:<app>`, so several ap
 | `VIVERE_ENABLED` | `true` | Set to `false` to stop all pings, for example locally |
 | `VIVERE_GRACE` | `5m` | Default grace period, such as `5m`, `2h` or `1d` |
 | `VIVERE_PAGE` | | Id of the Vivere status page new monitors go on |
-| `VIVERE_APP` | `APP_NAME` | Used in monitor names and tags |
+| `VIVERE_APP` | `APP_NAME` and `APP_ENV` | Used in monitor names and tags |
 
 ## Queued jobs
 
