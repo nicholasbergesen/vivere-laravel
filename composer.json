@@ -1,7 +1,7 @@
 {
     "name": "vivere/laravel",
     "description": "Monitor every Laravel scheduled task with Vivere: get alerted when a task fails, exits non-zero, or doesn't run at all.",
-    "keywords": ["laravel", "scheduler", "cron", "monitoring", "heartbeat", "dead man's switch", "vivere"],
+    "keywords": ["laravel", "scheduler", "cron", "monitoring", "heartbeat", "dead-mans-switch", "vivere"],
     "homepage": "https://vivere.dev/docs/laravel",
     "license": "MIT",
     "authors": [
